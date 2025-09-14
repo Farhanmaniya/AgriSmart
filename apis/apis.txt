@@ -1,0 +1,1098 @@
+----------------------
+app/apis/auth.py
+----------------------
+
+"""
+Authentication API routes for AgriSmart backend.
+Handles user registration, login, and Google OAuth.
+"""
+
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import HTTPBearer
+import logging
+
+from app.models.schemas import (
+    UserCreate, UserLogin, UserResponse, TokenResponse, 
+    GoogleAuthRequest, ErrorResponse
+)
+from app.services.auth import auth_service
+from app.utils.security import get_current_user
+from app.utils.logging import log_request, log_error
+
+logger = logging.getLogger(__name__)
+security = HTTPBearer()
+
+router = APIRouter()
+
+
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register new user",
+    description="Register a new user with email/password authentication"
+)
+async def register(user_data: UserCreate):
+    """Register a new user account."""
+    log_request(logger, "POST", "/api/auth/register")
+    
+    try:
+        result = await auth_service.register_user(user_data)
+        logger.info(f"User registered successfully: {user_data.email}")
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Registration validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        log_error(logger, e, "User registration")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed"
+        )
+
+
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="User login",
+    description="Authenticate user with email and password"
+)
+async def login(login_data: UserLogin):
+    """Authenticate user login."""
+    log_request(logger, "POST", "/api/auth/login", login_data.email)
+    
+    try:
+        result = await auth_service.login_user(login_data)
+        logger.info(f"User logged in successfully: {login_data.email}")
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Login failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    except Exception as e:
+        log_error(logger, e, "User login")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed"
+        )
+
+
+@router.post(
+    "/google",
+    response_model=TokenResponse,
+    summary="Google OAuth login",
+    description="Authenticate user with Google OAuth token"
+)
+async def google_oauth(auth_request: GoogleAuthRequest):
+    """Handle Google OAuth authentication."""
+    log_request(logger, "POST", "/api/auth/google")
+    
+    try:
+        result = await auth_service.google_oauth_login(auth_request.token)
+        logger.info("Google OAuth login successful")
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Google OAuth failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google authentication failed"
+        )
+    except Exception as e:
+        log_error(logger, e, "Google OAuth")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google authentication failed"
+        )
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get current user",
+    description="Get current authenticated user information"
+)
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """Get current user information."""
+    log_request(logger, "GET", "/api/auth/me", current_user.get("email"))
+    
+    try:
+        user_response = UserResponse(**current_user)
+        return user_response
+        
+    except Exception as e:
+        log_error(logger, e, "Get current user")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get user information"
+        )
+
+
+@router.post(
+    "/refresh",
+    response_model=dict,
+    summary="Refresh JWT token",
+    description="Refresh JWT access token for authenticated user"
+)
+async def refresh_token(current_user: dict = Depends(get_current_user)):
+    """Refresh JWT token."""
+    log_request(logger, "POST", "/api/auth/refresh", current_user.get("email"))
+    
+    try:
+        new_token = await auth_service.refresh_token(str(current_user["id"]))
+        
+        return {
+            "access_token": new_token,
+            "token_type": "bearer"
+        }
+        
+    except Exception as e:
+        log_error(logger, e, "Token refresh")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed"
+        )
+
+
+@router.post(
+    "/logout",
+    response_model=dict,
+    summary="User logout",
+    description="Logout current user (client-side token removal)"
+)
+async def logout(current_user: dict = Depends(get_current_user)):
+    """Logout user."""
+    log_request(logger, "POST", "/api/auth/logout", current_user.get("email"))
+    
+    # Since JWT is stateless, logout is handled client-side
+    # This endpoint is mainly for logging purposes
+    logger.info(f"User logged out: {current_user.get('email')}")
+    
+    return {
+        "message": "Logged out successfully",
+        "status": "success"
+    }
+
+
+@router.get(
+    "/verify-email/{token}",
+    response_model=dict,
+    summary="Verify email address",
+    description="Verify user email address with token"
+)
+async def verify_email(token: str):
+    """Verify user email address."""
+    log_request(logger, "GET", f"/api/auth/verify-email/{token}")
+    
+    # Email verification would be implemented here
+    # For now, return a placeholder response
+    
+    return {
+        "message": "Email verification not implemented yet",
+        "status": "pending"
+    }
+
+
+@router.post(
+    "/forgot-password",
+    response_model=dict,
+    summary="Request password reset",
+    description="Request password reset link for email"
+)
+async def forgot_password(email_data: dict):
+    """Request password reset."""
+    email = email_data.get("email")
+    log_request(logger, "POST", "/api/auth/forgot-password")
+    
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is required"
+        )
+    
+    # Password reset would be implemented here
+    # For now, return a placeholder response
+    logger.info(f"Password reset requested for: {email}")
+    
+    return {
+        "message": "Password reset email sent (not implemented yet)",
+        "status": "sent"
+    }
+
+
+@router.post(
+    "/reset-password",
+    response_model=dict,
+    summary="Reset password",
+    description="Reset user password with reset token"
+)
+async def reset_password(reset_data: dict):
+    """Reset user password."""
+    log_request(logger, "POST", "/api/auth/reset-password")
+    
+    token = reset_data.get("token")
+    new_password = reset_data.get("password")
+    
+    if not token or not new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token and new password are required"
+        )
+    
+    # Password reset would be implemented here
+    # For now, return a placeholder response
+    
+    return {
+        "message": "Password reset not implemented yet",
+        "status": "pending"
+    }
+
+----------------------
+app/apis/dashboard.py
+----------------------
+"""
+Dashboard API routes for AgriSmart backend.
+Handles dashboard statistics and analytics for farmers.
+"""
+
+from fastapi import APIRouter, HTTPException, status, Depends
+from datetime import datetime, timedelta
+import logging
+
+from app.models.schemas import DashboardStats, CropAnalytics, PredictionResponse
+from app.utils.security import get_current_user
+from app.utils.logging import log_request, log_error
+from app.database import db_ops
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+@router.get(
+    "/stats",
+    response_model=DashboardStats,
+    summary="Get dashboard statistics",
+    description="Get user's dashboard statistics and overview"
+)
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    """Get dashboard statistics for user."""
+    log_request(logger, "GET", "/api/dashboard/stats", str(current_user["id"]))
+    
+    try:
+        # Get comprehensive dashboard stats
+        stats_data = await db_ops.get_dashboard_stats(str(current_user["id"]))
+        
+        # Convert recent predictions to PredictionResponse objects
+        recent_predictions = []
+        for pred in stats_data.get("recent_predictions", []):
+            try:
+                recent_predictions.append(PredictionResponse(**pred))
+            except Exception as e:
+                logger.warning(f"Error converting prediction to response: {str(e)}")
+                continue
+        
+        # Create dashboard stats response
+        dashboard_stats = DashboardStats(
+            total_predictions=stats_data.get("total_predictions", 0),
+            accuracy_rate=stats_data.get("accuracy_rate", "0%"),
+            last_prediction=stats_data.get("last_prediction", "Never"),
+            irrigation_count=stats_data.get("irrigation_count", 0),
+            member_since=stats_data.get("member_since", 2025),
+            recent_predictions=recent_predictions
+        )
+        
+        logger.info(f"Dashboard stats retrieved for user {current_user['id']}")
+        return dashboard_stats
+        
+    except Exception as e:
+        log_error(logger, e, "Get dashboard stats")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve dashboard statistics"
+        )
+
+
+@router.get(
+    "/analytics",
+    response_model=list[CropAnalytics],
+    summary="Get crop analytics",
+    description="Get detailed crop analytics and insights"
+)
+async def get_crop_analytics(current_user: dict = Depends(get_current_user)):
+    """Get crop analytics for user."""
+    log_request(logger, "GET", "/api/dashboard/analytics", str(current_user["id"]))
+    
+    try:
+        # Get user's main crops
+        main_crops = current_user.get("main_crops", "wheat, rice").lower()
+        crop_list = [crop.strip() for crop in main_crops.split(",")]
+        
+        # Generate analytics for each crop
+        analytics = []
+        for crop in crop_list[:5]:  # Limit to 5 crops
+            crop_analytics = CropAnalytics(
+                crop_type=crop.title(),
+                total_area=current_user.get("farm_size", 0.0) / len(crop_list),
+                avg_yield=_generate_mock_yield(crop),
+                disease_incidents=_generate_mock_incidents("disease"),
+                pest_incidents=_generate_mock_incidents("pest"),
+                irrigation_frequency=_generate_mock_irrigation_frequency()
+            )
+            analytics.append(crop_analytics)
+        
+        logger.info(f"Crop analytics generated for user {current_user['id']}")
+        return analytics
+        
+    except Exception as e:
+        log_error(logger, e, "Get crop analytics")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve crop analytics"
+        )
+
+
+@router.get(
+    "/overview",
+    response_model=dict,
+    summary="Get dashboard overview",
+    description="Get comprehensive dashboard overview with key metrics"
+)
+async def get_dashboard_overview(current_user: dict = Depends(get_current_user)):
+    """Get dashboard overview."""
+    log_request(logger, "GET", "/api/dashboard/overview", str(current_user["id"]))
+    
+    try:
+        # Get basic stats
+        stats_data = await db_ops.get_dashboard_stats(str(current_user["id"]))
+        
+        # Calculate additional metrics
+        overview = {
+            "user_profile": {
+                "name": current_user.get("name"),
+                "region": current_user.get("region"),
+                "farm_size": current_user.get("farm_size"),
+                "main_crops": current_user.get("main_crops"),
+                "member_since": current_user.get("member_since", 2025)
+            },
+            "quick_stats": {
+                "total_predictions": stats_data.get("total_predictions", 0),
+                "accuracy_rate": stats_data.get("accuracy_rate", "0%"),
+                "irrigation_schedules": stats_data.get("irrigation_count", 0),
+                "active_alerts": _generate_mock_alerts_count()
+            },
+            "recent_activity": {
+                "last_prediction": stats_data.get("last_prediction", "Never"),
+                "last_irrigation": _get_last_irrigation_date(),
+                "predictions_this_month": _calculate_monthly_predictions(stats_data.get("recent_predictions", [])),
+                "water_saved": _calculate_water_saved()
+            },
+            "recommendations": [
+                "Consider switching to drip irrigation for better efficiency",
+                "Monitor weather forecast for upcoming rainfall",
+                "Schedule disease prediction for tomato crop",
+                "Review irrigation schedule for next week"
+            ],
+            "alerts": _generate_mock_alerts()
+        }
+        
+        logger.info(f"Dashboard overview generated for user {current_user['id']}")
+        return overview
+        
+    except Exception as e:
+        log_error(logger, e, "Get dashboard overview")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve dashboard overview"
+        )
+
+
+@router.get(
+    "/performance",
+    response_model=dict,
+    summary="Get performance metrics",
+    description="Get detailed performance metrics and trends"
+)
+async def get_performance_metrics(current_user: dict = Depends(get_current_user)):
+    """Get performance metrics."""
+    log_request(logger, "GET", "/api/dashboard/performance", str(current_user["id"]))
+    
+    try:
+        # Generate performance metrics
+        performance = {
+            "prediction_accuracy": {
+                "overall": 85.5,
+                "yield_predictions": 88.2,
+                "disease_detection": 82.1,
+                "pest_classification": 86.7,
+                "trend": "improving"
+            },
+            "irrigation_efficiency": {
+                "water_saved_percentage": 23.5,
+                "cost_savings": 1250.75,
+                "efficiency_score": 78.9,
+                "trend": "stable"
+            },
+            "crop_health": {
+                "overall_score": 82.3,
+                "disease_prevention": 89.1,
+                "pest_control": 75.6,
+                "yield_optimization": 84.2
+            },
+            "monthly_trends": _generate_monthly_trends(),
+            "comparisons": {
+                "regional_average": 72.1,
+                "your_performance": 85.5,
+                "improvement": 13.4
+            }
+        }
+        
+        logger.info(f"Performance metrics generated for user {current_user['id']}")
+        return performance
+        
+    except Exception as e:
+        log_error(logger, e, "Get performance metrics")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve performance metrics"
+        )
+
+
+@router.get(
+    "/insights",
+    response_model=dict,
+    summary="Get AI insights",
+    description="Get AI-generated insights and recommendations"
+)
+async def get_ai_insights(current_user: dict = Depends(get_current_user)):
+    """Get AI-powered insights."""
+    log_request(logger, "GET", "/api/dashboard/insights", str(current_user["id"]))
+    
+    try:
+        # Generate AI insights
+        insights = {
+            "key_insights": [
+                {
+                    "title": "Optimal Irrigation Timing",
+                    "description": "Your crops show 15% better yield when irrigated between 6-8 AM",
+                    "impact": "high",
+                    "action": "Schedule morning irrigation"
+                },
+                {
+                    "title": "Disease Risk Alert",
+                    "description": "High humidity levels increase fungal disease risk by 30%",
+                    "impact": "medium",
+                    "action": "Apply preventive fungicide"
+                },
+                {
+                    "title": "Nutrient Optimization",
+                    "description": "Nitrogen levels in field 2 are 20% below optimal",
+                    "impact": "medium",
+                    "action": "Apply nitrogen-rich fertilizer"
+                }
+            ],
+            "predictive_alerts": [
+                {
+                    "type": "weather",
+                    "message": "Heavy rainfall expected in 3 days - adjust irrigation schedule",
+                    "severity": "medium",
+                    "expires_at": (datetime.now() + timedelta(days=3)).isoformat()
+                },
+                {
+                    "type": "pest",
+                    "message": "Aphid activity likely to increase with rising temperatures",
+                    "severity": "low",
+                    "expires_at": (datetime.now() + timedelta(days=7)).isoformat()
+                }
+            ],
+            "optimization_suggestions": [
+                "Switch to drought-resistant crop varieties for 20% water savings",
+                "Implement integrated pest management for cost-effective pest control",
+                "Use cover crops to improve soil health and reduce irrigation needs"
+            ],
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        logger.info(f"AI insights generated for user {current_user['id']}")
+        return insights
+        
+    except Exception as e:
+        log_error(logger, e, "Get AI insights")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate AI insights"
+        )
+
+
+# Helper functions for mock data generation
+def _generate_mock_yield(crop: str) -> float:
+    """Generate mock yield data for crop."""
+    base_yields = {
+        "wheat": 3.2,
+        "rice": 4.8,
+        "corn": 5.5,
+        "cotton": 2.1,
+        "sugarcane": 75.2,
+        "tomato": 45.3,
+        "potato": 28.5,
+        "onion": 32.1
+    }
+    return base_yields.get(crop.lower(), 3.0)
+
+
+def _generate_mock_incidents(incident_type: str) -> int:
+    """Generate mock incident count."""
+    import random
+    if incident_type == "disease":
+        return random.randint(0, 3)
+    elif incident_type == "pest":
+        return random.randint(0, 5)
+    return 0
+
+
+def _generate_mock_irrigation_frequency() -> float:
+    """Generate mock irrigation frequency."""
+    import random
+    return round(random.uniform(2.0, 7.0), 1)
+
+
+def _generate_mock_alerts_count() -> int:
+    """Generate mock alerts count."""
+    import random
+    return random.randint(0, 4)
+
+
+def _get_last_irrigation_date() -> str:
+    """Get mock last irrigation date."""
+    last_date = datetime.now() - timedelta(days=2)
+    return last_date.strftime("%Y-%m-%d")
+
+
+def _calculate_monthly_predictions(predictions: list) -> int:
+    """Calculate predictions made this month."""
+    current_month = datetime.now().month
+    current_year = datetime.now().year
+    
+    monthly_count = 0
+    for pred in predictions:
+        try:
+            pred_date = datetime.fromisoformat(pred.get("created_at", "").replace('Z', '+00:00'))
+            if pred_date.month == current_month and pred_date.year == current_year:
+                monthly_count += 1
+        except:
+            continue
+    
+    return monthly_count
+
+
+def _calculate_water_saved() -> float:
+    """Calculate mock water saved."""
+    import random
+    return round(random.uniform(500, 3000), 2)
+
+
+def _generate_mock_alerts() -> list:
+    """Generate mock alerts."""
+    return [
+        {
+            "id": "alert_1",
+            "type": "weather",
+            "message": "Heavy rainfall expected tomorrow",
+            "severity": "medium",
+            "timestamp": datetime.now().isoformat()
+        },
+        {
+            "id": "alert_2", 
+            "type": "irrigation",
+            "message": "Soil moisture below optimal level",
+            "severity": "low",
+            "timestamp": (datetime.now() - timedelta(hours=2)).isoformat()
+        }
+    ]
+
+
+def _generate_monthly_trends() -> dict:
+    """Generate mock monthly trends."""
+    import random
+    
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
+    predictions = [random.randint(5, 25) for _ in months]
+    accuracy = [random.uniform(75, 95) for _ in months]
+    water_saved = [random.uniform(1000, 4000) for _ in months]
+    
+    return {
+        "months": months,
+        "predictions": predictions,
+        "accuracy": [round(a, 1) for a in accuracy],
+        "water_saved": [round(w, 1) for w in water_saved]
+    }
+
+---------------------------
+app/apis/irrigation.py
+---------------------------
+"""
+Irrigation API routes for AgriSmart backend.
+Handles irrigation scheduling and water management.
+"""
+
+from fastapi import APIRouter, HTTPException, status, Depends
+from datetime import datetime
+import uuid
+import logging
+
+from app.models.schemas import IrrigationRequest, IrrigationResponse
+from app.services.irrigation import irrigation_service
+from app.utils.security import get_current_user
+from app.utils.logging import log_request, log_error, log_irrigation_schedule
+from app.database import db_ops
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+@router.post(
+    "/schedule",
+    response_model=IrrigationResponse,
+    summary="Calculate irrigation schedule",
+    description="Calculate optimal irrigation schedule based on conditions"
+)
+async def calculate_irrigation_schedule(
+    request: IrrigationRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Calculate irrigation schedule for user's crop."""
+    log_request(logger, "POST", "/api/irrigation/schedule", str(current_user["id"]))
+    
+    try:
+        # Get irrigation schedule from service
+        schedule = await irrigation_service.calculate_irrigation_schedule(request)
+        
+        # Only log irrigation if it's actually scheduled (duration > 0)
+        if schedule.duration_minutes > 0:
+            # Prepare data for database
+            irrigation_data = {
+                "id": str(uuid.uuid4()),
+                "user_id": str(current_user["id"]),
+                "schedule_date": schedule.schedule_date,
+                "duration_minutes": schedule.duration_minutes,
+                "water_volume": schedule.water_volume,
+                "weather_data": {
+                    "temperature": request.temperature,
+                    "rainfall": request.rainfall,
+                    "soil_moisture": request.soil_moisture,
+                    "crop_type": request.crop_type.value,
+                    "area": request.area
+                }
+            }
+            
+            # Store irrigation log in database
+            await db_ops.create_irrigation_log(irrigation_data)
+            
+            # Log successful irrigation scheduling
+            log_irrigation_schedule(
+                logger, 
+                str(current_user["id"]), 
+                schedule.duration_minutes, 
+                schedule.water_volume
+            )
+        
+        logger.info(f"Irrigation schedule calculated for user {current_user['id']}")
+        
+        return schedule
+        
+    except Exception as e:
+        log_error(logger, e, "Irrigation scheduling")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Irrigation scheduling failed"
+        )
+
+
+@router.get(
+    "/history",
+    response_model=list[dict],
+    summary="Get irrigation history",
+    description="Get user's irrigation history and logs"
+)
+async def get_irrigation_history(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get user's irrigation history."""
+    log_request(logger, "GET", "/api/irrigation/history", str(current_user["id"]))
+    
+    try:
+        # Get irrigation logs from database
+        logs = await db_ops.get_user_irrigation_logs(str(current_user["id"]), days)
+        
+        # Convert to response format
+        history = []
+        for log in logs:
+            history.append({
+                "id": log["id"],
+                "schedule_date": log["schedule_date"],
+                "duration_minutes": log["duration_minutes"],
+                "water_volume": log["water_volume"],
+                "weather_data": log["weather_data"],
+                "created_at": log["created_at"]
+            })
+        
+        logger.info(f"Retrieved {len(history)} irrigation logs for user {current_user['id']}")
+        return history
+        
+    except Exception as e:
+        log_error(logger, e, "Get irrigation history")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve irrigation history"
+        )
+
+
+@router.get(
+    "/recommendations",
+    response_model=dict,
+    summary="Get irrigation recommendations",
+    description="Get general irrigation recommendations for user's region"
+)
+async def get_irrigation_recommendations(
+    crop_type: str = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get irrigation recommendations."""
+    log_request(logger, "GET", "/api/irrigation/recommendations", str(current_user["id"]))
+    
+    try:
+        # Generate general recommendations
+        recommendations = {
+            "general": [
+                "Monitor soil moisture levels regularly",
+                "Irrigate early morning or late evening",
+                "Use drip irrigation for water efficiency",
+                "Install mulch to retain soil moisture"
+            ],
+            "seasonal": {
+                "summer": [
+                    "Increase irrigation frequency during hot weather",
+                    "Provide shade during peak heat hours",
+                    "Check for signs of heat stress"
+                ],
+                "winter": [
+                    "Reduce irrigation frequency in cool weather",
+                    "Avoid overwatering in low temperatures",
+                    "Monitor for frost conditions"
+                ],
+                "monsoon": [
+                    "Reduce irrigation during heavy rainfall",
+                    "Ensure proper drainage",
+                    "Monitor for waterlogging"
+                ]
+            },
+            "efficiency_tips": [
+                "Use soil moisture sensors",
+                "Implement automated irrigation systems",
+                "Regular maintenance of irrigation equipment",
+                "Track water usage and costs"
+            ]
+        }
+        
+        # Add crop-specific recommendations if crop type provided
+        if crop_type:
+            crop_recommendations = {
+                "wheat": ["Deep, less frequent irrigation", "Critical stages: tillering, flowering"],
+                "rice": ["Maintain standing water", "Drain before harvest"],
+                "corn": ["Critical periods: silking, grain filling", "Avoid water stress during tasseling"],
+                "cotton": ["Deep irrigation", "Reduce water during boll opening"]
+            }
+            
+            if crop_type.lower() in crop_recommendations:
+                recommendations["crop_specific"] = crop_recommendations[crop_type.lower()]
+        
+        return {
+            "recommendations": recommendations,
+            "user_region": current_user.get("region", "India"),
+            "generated_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        log_error(logger, e, "Get irrigation recommendations")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve recommendations"
+        )
+
+
+@router.get(
+    "/efficiency",
+    response_model=dict,
+    summary="Get irrigation efficiency analysis",
+    description="Analyze irrigation efficiency and water usage patterns"
+)
+async def get_irrigation_efficiency(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get irrigation efficiency analysis."""
+    log_request(logger, "GET", "/api/irrigation/efficiency", str(current_user["id"]))
+    
+    try:
+        # Get efficiency analysis from service
+        analysis = await irrigation_service.analyze_irrigation_efficiency(str(current_user["id"]))
+        
+        logger.info(f"Irrigation efficiency analysis generated for user {current_user['id']}")
+        return analysis
+        
+    except Exception as e:
+        log_error(logger, e, "Get irrigation efficiency")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to analyze irrigation efficiency"
+        )
+
+
+@router.post(
+    "/feedback",
+    response_model=dict,
+    summary="Submit irrigation feedback",
+    description="Submit feedback on irrigation effectiveness"
+)
+async def submit_irrigation_feedback(
+    feedback_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Submit irrigation feedback."""
+    log_request(logger, "POST", "/api/irrigation/feedback", str(current_user["id"]))
+    
+    try:
+        irrigation_id = feedback_data.get("irrigation_id")
+        effectiveness = feedback_data.get("effectiveness")  # "high", "medium", "low"
+        comments = feedback_data.get("comments", "")
+        
+        if not irrigation_id or not effectiveness:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="irrigation_id and effectiveness are required"
+            )
+        
+        # Store feedback (would be implemented with database)
+        feedback_record = {
+            "user_id": str(current_user["id"]),
+            "irrigation_id": irrigation_id,
+            "effectiveness": effectiveness,
+            "comments": comments,
+            "submitted_at": datetime.now().isoformat()
+        }
+        
+        logger.info(f"Irrigation feedback submitted by user {current_user['id']}")
+        
+        return {
+            "message": "Feedback submitted successfully",
+            "feedback_id": str(uuid.uuid4()),
+            "status": "received"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(logger, e, "Submit irrigation feedback")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to submit feedback"
+        )
+
+
+@router.get(
+    "/weather-impact",
+    response_model=dict,
+    summary="Get weather impact analysis",
+    description="Analyze how weather conditions affect irrigation needs"
+)
+async def get_weather_impact_analysis(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get weather impact analysis for irrigation."""
+    log_request(logger, "GET", "/api/irrigation/weather-impact", str(current_user["id"]))
+    
+    try:
+        # Mock weather impact analysis
+        analysis = {
+            "current_conditions": {
+                "temperature": 28.5,
+                "humidity": 65,
+                "rainfall_24h": 5.2,
+                "wind_speed": 8.5,
+                "impact_score": 7.2  # Out of 10
+            },
+            "irrigation_adjustments": {
+                "frequency_modifier": 1.1,  # 10% more frequent
+                "duration_modifier": 0.9,   # 10% shorter duration
+                "reason": "Moderate temperature with low recent rainfall"
+            },
+            "weekly_forecast_impact": [
+                {"day": "Today", "irrigation_need": "Medium", "modifier": 1.0},
+                {"day": "Tomorrow", "irrigation_need": "High", "modifier": 1.2},
+                {"day": "Day 3", "irrigation_need": "Low", "modifier": 0.7},
+                {"day": "Day 4", "irrigation_need": "Low", "modifier": 0.6},
+                {"day": "Day 5", "irrigation_need": "Medium", "modifier": 1.0}
+            ],
+            "recommendations": [
+                "Monitor soil moisture closely due to increasing temperatures",
+                "Reduce irrigation duration but maintain frequency",
+                "Consider mulching to retain soil moisture"
+            ]
+        }
+        
+        logger.info(f"Weather impact analysis generated for user {current_user['id']}")
+        return analysis
+        
+    except Exception as e:
+        log_error(logger, e, "Get weather impact analysis")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate weather impact analysis"
+        )
+
+--------------------------
+app/apis/prediction.py
+--------------------------
+"""
+Enhanced ML Predictions API routes for AgriSmart backend.
+Now supports your existing models: crop yield and crop recommendation.
+"""
+
+from fastapi import APIRouter, HTTPException, status, Depends
+from datetime import datetime
+import uuid
+import logging
+
+from app.models.schemas import (
+    YieldPredictionRequest, CropRecommendationRequest, DiseasePredictionRequest, 
+    PestPredictionRequest, PredictionResponse, CropRecommendationResponse,
+    PredictionType, ModelListResponse, AddModelRequest
+)
+from app.services.ml import ml_service
+from app.utils.security import get_current_user
+from app.utils.logging import log_request, log_error, log_ml_prediction
+from app.database import db_ops
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+@router.post(
+    "/yield",
+    response_model=PredictionResponse,
+    summary="Predict crop yield using your Decision Tree model",
+    description="Predict crop yield using your loaded crop_yield_model.pkl (Decision Tree Regressor)"
+)
+async def predict_yield(
+    request: YieldPredictionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Predict crop yield using your trained Decision Tree model."""
+    log_request(logger, "POST", "/api/predictions/yield", str(current_user["id"]))
+    
+    try:
+        # Get prediction from your actual model
+        predictions, confidence, recommendations = await ml_service.predict_yield(request)
+        
+        # Prepare data for database
+        prediction_data = {
+            "id": str(uuid.uuid4()),
+            "user_id": str(current_user["id"]),
+            "prediction_type": PredictionType.YIELD.value,
+            "crop_type": request.crop_type.value,
+            "input_data": {
+                "rainfall": request.rainfall,
+                "fertilizer_amount": request.fertilizer_amount,
+                "temperature": request.temperature,
+                "nitrogen": request.nitrogen,
+                "phosphorus": request.phosphorus,
+                "potassium": request.potassium,
+                "soil_ph": request.soil_ph,
+                "area": request.area,
+                "sowing_date": request.sowing_date
+            },
+            "predictions": predictions,
+            "confidence": confidence,
+            "recommendations": recommendations
+        }
+        
+        # Store prediction in database
+        stored_prediction = await db_ops.create_prediction(prediction_data)
+        
+        # Update user statistics
+        current_predictions = current_user.get("predictions_count", 0) + 1
+        await db_ops.update_user_stats(
+            str(current_user["id"]),
+            current_predictions,
+            f"{min(95, 70 + current_predictions)}%",
+            f"Yield - {request.crop_type.value.title()}"
+        )
+        
+        # Log successful prediction
+        log_ml_prediction(logger, "yield", str(current_user["id"]), confidence)
+        
+        # Create response
+        response = PredictionResponse(
+            id=uuid.UUID(stored_prediction["id"]),
+            user_id=uuid.UUID(stored_prediction["user_id"]),
+            prediction_type=stored_prediction["prediction_type"],
+            crop_type=stored_prediction["crop_type"],
+            predictions=stored_prediction["predictions"],
+            confidence=stored_prediction["confidence"],
+            recommendations=stored_prediction["recommendations"],
+            model_info={
+                "model_used": predictions.get("model_used", "DecisionTreeRegressor"),
+                "model_loaded": predictions.get("model_loaded", False),
+                "features_used": 6
+            },
+            created_at=datetime.fromisoformat(stored_prediction["created_at"].replace('Z', '+00:00'))
+        )
+        
+        return response
+        
+    except Exception as e:
+        log_error(logger, e, "Yield prediction")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Yield prediction failed: {str(e)}"
+        )
+
+
+@router.post(
+    "/crop-recommendation",
+    response_model=CropRecommendationResponse,
+    summary="Get crop recommendation using your Random Forest model",
+    description="Get optimal crop recommendation using your crop_recommendation_model.pkl (Random Forest with 100 estimators)"
+)
+async def recommend_crop(
+    request: CropRecommendationRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get crop recommendation using your trained Random Forest model."""
+    log_request(logger, "POST", "/api/predictions/crop-recommendation", str(current_user["id"]))
+    
+    try:
+        # Prepare soil data for your model (11 features)
+        soil_data = {
+            'N': request.nitrogen,
+            'P': request.phosphorus, 
+            'K': request.potassium,
+            'ph': request.ph,
+            'EC': request.ec,
+            'S': request.sulfur,
+            'Cu': request.copper,
+            'Fe': request.iron,
+            'Mn': request.manganese,
+            'Zn': request.zinc,
+            'B': request.boron
+        }
+        #incomplete file.... complete this

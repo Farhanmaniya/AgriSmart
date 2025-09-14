@@ -20,7 +20,7 @@ asyncpg
 joblib
 
 # TensorFlow for .h5 model support (optional)
-tensorflow==2.16.1
+tensorflow==2.20.0
 
 # Additional ML libraries
 scipy

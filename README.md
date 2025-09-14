@@ -540,4 +540,5 @@ This project is developed for Smart India Hackathon 2025. All rights reserved to
 
 **Happy Farming! 🌾** 
 
-For any issues or questions, please refer to the API documentation at `/api/docs` or contact the development team.
+For any issues or questions, please refer to the API documentation at `/api/docs` or contact the development team.#   A g r i S m a r t  
+ 

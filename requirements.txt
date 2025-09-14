@@ -10,7 +10,7 @@ scikit-learn
 numpy
 Cython
 pandas
-
+python-dotenv
 # Database dependencies
 sqlalchemy
 alembic
